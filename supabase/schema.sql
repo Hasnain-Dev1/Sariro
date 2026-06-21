@@ -25,34 +25,67 @@ create table if not exists public.profiles (
   email         text not null,
   display_name  text,
   is_admin      boolean not null default false,   -- ← manually flipped in Supabase
+  role          text not null default 'student',  -- student | teacher | admin
+  avatar_url    text,
   avatar_initial text,
+  provider      text,  -- google | facebook | github | email
   created_at    timestamptz not null default now()
 );
 
 comment on column public.profiles.is_admin is
   'Admin flag. Default false. Manually flipped to true in Supabase dashboard by another admin. Never auto-set by code.';
+comment on column public.profiles.role is
+  'User role: student (default), teacher, or admin. Manually changed in admin panel. Never auto-set by code.';
 
 -- Auto-create a profile row whenever a new user signs up (via Supabase Auth).
--- Extracts display_name from the email local-part: ali@eg.com → "Ali"
+-- Fetches display_name from OAuth metadata first (Google/Facebook/GitHub),
+-- falls back to extracting from email (ali@eg.com → "Ali").
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 declare
+  v_display_name text;
+  v_avatar_url text;
+  v_initial text;
+  v_provider text;
   local_part text;
-  clean_name text;
-  initial text;
 begin
-  local_part := split_part(new.email, '@', 1);
-  -- strip digits, dots, underscores, dashes → first word
-  clean_name := regexp_replace(local_part, '[0-9._-]+', ' ', 'g');
-  clean_name := split_part(trim(clean_name), ' ', 1);
-  clean_name := initcap(clean_name);
-  initial := upper(left(coalesce(nullif(clean_name, ''), 'X'), 1));
+  -- 1. Try OAuth metadata first (Google, Facebook, GitHub)
+  v_display_name := new.raw_user_meta_data->>'full_name';
+  if v_display_name is null or v_display_name = '' then
+    v_display_name := new.raw_user_meta_data->>'name';
+  end if;
+  if v_display_name is null or v_display_name = '' then
+    v_display_name := new.raw_user_meta_data->>'user_name';
+  end if;
 
-  insert into public.profiles (id, email, display_name, avatar_initial)
-  values (new.id, new.email, clean_name, initial);
+  -- 2. Avatar URL from OAuth
+  v_avatar_url := new.raw_user_meta_data->>'avatar_url';
+  if v_avatar_url is null then
+    v_avatar_url := new.raw_user_meta_data->>'picture';
+  end if;
+
+  -- 3. Provider
+  v_provider := new.raw_app_meta_data->>'provider';
+  if v_provider is null then
+    v_provider := 'email';
+  end if;
+
+  -- 4. Fallback: extract name from email local-part
+  if v_display_name is null or v_display_name = '' then
+    local_part := split_part(new.email, '@', 1);
+    v_display_name := regexp_replace(local_part, '[0-9._-]+', ' ', 'g');
+    v_display_name := split_part(trim(v_display_name), ' ', 1);
+    v_display_name := initcap(v_display_name);
+  end if;
+
+  -- 5. Avatar initial
+  v_initial := upper(left(coalesce(nullif(v_display_name, ''), 'X'), 1));
+
+  insert into public.profiles (id, email, display_name, avatar_url, avatar_initial, provider)
+  values (new.id, new.email, v_display_name, v_avatar_url, v_initial, v_provider);
 
   return new;
 end;
@@ -63,6 +96,18 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 1b. ENROLLMENTS  (student ↔ course link, with real progress)
+-- ────────────────────────────────────────────────────────────────────────────
+create table if not exists public.enrollments (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid references public.profiles (id) on delete cascade,
+  course_id   text not null,
+  progress    integer default 0,
+  status      text default 'active',
+  created_at  timestamptz not null default now()
+);
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- 2. SUBSCRIBERS  (newsletter signups — migrated from SQLite)
@@ -158,16 +203,8 @@ create table if not exists public.events (
 );
 
 -- ────────────────────────────────────────────────────────────────────────────
--- 8. ENROLLMENTS  (student ↔ course link, with progress)
+-- 8. ENROLLMENTS  — moved above (section 1b) to keep schema ordered
 -- ────────────────────────────────────────────────────────────────────────────
-create table if not exists public.enrollments (
-  id          uuid primary key default gen_random_uuid(),
-  user_id     uuid references public.profiles (id) on delete cascade,
-  course_id   text,                          -- references courses.course_id
-  progress    integer default 0,             -- 0..100
-  status      text default 'active',         -- active | completed | dropped
-  created_at  timestamptz not null default now()
-);
 
 -- ============================================================================
 -- ROW LEVEL SECURITY (RLS) — who can read/write what

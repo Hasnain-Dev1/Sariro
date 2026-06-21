@@ -57,12 +57,17 @@ export function PageEditor({ page, open, onClose, onSaved }: Props) {
         excerpt: form.excerpt, content: form.content, published: form.published,
         last_updated: new Date().toISOString(),
       }, { onConflict: "slug" });
-      if (error) throw error;
+      if (error) {
+        if (error.message.includes("row-level security") || error.code === "42501") {
+          throw new Error("Permission denied. Your account is not an admin. Flip is_admin=true for your email in the Supabase dashboard (profiles table).");
+        }
+        throw error;
+      }
       toast.success(page ? "Page updated!" : "Page created!");
       onSaved();
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save.");
+      toast.error(err instanceof Error ? err.message : "Could not save.", { duration: 8000 });
     } finally { setSaving(false); }
   }
 
