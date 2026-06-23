@@ -36,12 +36,21 @@ export function PagesTab({ pages: fallbackPages }: { pages: SupportPage[] }) {
       const supabase = getSupabaseBrowser();
       const { data, error } = await supabase.from("pages").select("*").order("title");
       if (error) throw error;
-      if (data && data.length > 0) {
-        setPages(data as DBPage[]);
-      }
+      const dbPages = (data || []) as DBPage[];
+      // MERGE: DB pages first, then fallback (demo) pages not in DB
+      const dbSlugs = new Set(dbPages.map((p) => p.slug));
+      const fallbackMapped: DBPage[] = fallbackPages.map((p) => ({
+        slug: p.slug, title: p.title, category: p.category,
+        excerpt: p.excerpt, content: p.content, published: true,
+      }));
+      const merged: DBPage[] = [
+        ...dbPages,
+        ...fallbackMapped.filter((p) => !dbSlugs.has(p.slug)),
+      ];
+      setPages(merged);
     } catch { /* keep fallback */ }
     finally { setLoading(false); }
-  }, [configured]);
+  }, [configured, fallbackPages]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);

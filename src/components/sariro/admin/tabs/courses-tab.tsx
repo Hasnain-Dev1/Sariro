@@ -22,31 +22,34 @@ export function CoursesTab({ courses: fallbackCourses }: { courses: Course[] }) 
       const supabase = getSupabaseBrowser();
       const { data, error } = await supabase.from("courses").select("*").order("title");
       if (error) throw error;
-      if (data && data.length > 0) {
-        // map DB rows → Course shape
-        const mapped: Course[] = data.map((r: Record<string, unknown>) => ({
-          id: r.course_id as string,
-          title: r.title as string,
-          tagline: (r.tagline as string) || "",
-          level: (r.level as Course["level"]) || "Beginner",
-          audience: (r.audience as Course["audience"]) || "All",
-          format: (r.format as Course["format"]) || "Cohort",
-          durationWeeks: (r.duration_weeks as number) || 4,
-          modules: (r.modules as number) || 6,
-          price: (r.price as number) || 0,
-          priceLabel: `$${r.price}`,
-          nextCohort: (r.next_cohort as string) || "",
-          featured: (r.featured as boolean) || false,
-          accent: (r.accent as "blue" | "green") || "blue",
-          syllabus: (r.syllabus as string[]) || [],
-          outcomes: (r.outcomes as string[]) || [],
-        }));
-        setCourses(mapped);
-      }
+      const dbCourses: Course[] = (data || []).map((r: Record<string, unknown>) => ({
+        id: r.course_id as string,
+        title: r.title as string,
+        tagline: (r.tagline as string) || "",
+        level: (r.level as Course["level"]) || "Beginner",
+        audience: (r.audience as Course["audience"]) || "All",
+        format: (r.format as Course["format"]) || "Cohort",
+        durationWeeks: (r.duration_weeks as number) || 4,
+        modules: (r.modules as number) || 6,
+        price: (r.price as number) || 0,
+        priceLabel: `$${r.price}`,
+        nextCohort: (r.next_cohort as string) || "",
+        featured: (r.featured as boolean) || false,
+        accent: (r.accent as "blue" | "green") || "blue",
+        syllabus: (r.syllabus as string[]) || [],
+        outcomes: (r.outcomes as string[]) || [],
+      }));
+      // MERGE: DB courses (edited/created) first, then demo courses not in DB
+      const dbIds = new Set(dbCourses.map((c) => c.id));
+      const merged: Course[] = [
+        ...dbCourses,
+        ...fallbackCourses.filter((c) => !dbIds.has(c.id)),
+      ];
+      setCourses(merged);
     } catch {
-      // keep fallback
+      // keep fallback (already in state)
     } finally { setLoading(false); }
-  }, [configured]);
+  }, [configured, fallbackCourses]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);

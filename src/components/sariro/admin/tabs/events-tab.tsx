@@ -22,26 +22,30 @@ export function EventsTab({ events: fallbackEvents }: { events: SariroEvent[] })
       const supabase = getSupabaseBrowser();
       const { data, error } = await supabase.from("events").select("*").order("date");
       if (error) throw error;
-      if (data && data.length > 0) {
-        const mapped: SariroEvent[] = data.map((r: Record<string, unknown>) => ({
-          id: r.event_id as string,
-          title: r.title as string,
-          type: (r.type as SariroEvent["type"]) || "Webinar",
-          date: (r.date as string) || "",
-          time: (r.time as string) || "",
-          format: (r.format as SariroEvent["format"]) || "Online",
-          location: (r.location as string) || "",
-          description: (r.description as string) || "",
-          capacity: (r.capacity as string) || "",
-          price: (r.price as string) || "",
-          status: (r.status as SariroEvent["status"]) || "open",
-          accent: (r.accent as "blue" | "green") || "blue",
-        }));
-        setEvents(mapped);
-      }
+      const dbEvents: SariroEvent[] = (data || []).map((r: Record<string, unknown>) => ({
+        id: r.event_id as string,
+        title: r.title as string,
+        type: (r.type as SariroEvent["type"]) || "Webinar",
+        date: (r.date as string) || "",
+        time: (r.time as string) || "",
+        format: (r.format as SariroEvent["format"]) || "Online",
+        location: (r.location as string) || "",
+        description: (r.description as string) || "",
+        capacity: (r.capacity as string) || "",
+        price: (r.price as string) || "",
+        status: (r.status as SariroEvent["status"]) || "open",
+        accent: (r.accent as "blue" | "green") || "blue",
+      }));
+      // MERGE: DB events first, then demo events not in DB
+      const dbIds = new Set(dbEvents.map((e) => e.id));
+      const merged: SariroEvent[] = [
+        ...dbEvents,
+        ...fallbackEvents.filter((e) => !dbIds.has(e.id)),
+      ];
+      setEvents(merged);
     } catch { /* keep fallback */ }
     finally { setLoading(false); }
-  }, [configured]);
+  }, [configured, fallbackEvents]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);

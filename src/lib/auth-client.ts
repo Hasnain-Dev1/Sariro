@@ -60,6 +60,38 @@ export async function signInWithGoogle(): Promise<void> {
   if (error) throw error;
 }
 
+// ── Sign in with GitHub ─────────────────────────────────────────────────────
+// Privacy: requests ONLY email + name + avatar. Nothing else.
+export async function signInWithGitHub(): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured. Add your keys to .env");
+  }
+  const supabase = getSupabaseBrowser();
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "github",
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+    },
+  });
+  if (error) throw error;
+}
+
+// ── Sign in with Facebook ───────────────────────────────────────────────────
+// Privacy: requests ONLY email + name + avatar. Nothing else.
+export async function signInWithFacebook(): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured. Add your keys to .env");
+  }
+  const supabase = getSupabaseBrowser();
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "facebook",
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+    },
+  });
+  if (error) throw error;
+}
+
 // ── Sign up with email + password ───────────────────────────────────────────
 export async function signUpWithEmail(
   email: string,
