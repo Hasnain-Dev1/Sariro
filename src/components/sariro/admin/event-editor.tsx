@@ -62,17 +62,12 @@ export function EventEditor({ event, open, onClose, onSaved }: Props) {
         capacity: form.capacity, price: form.price,
         status: form.status, accent: form.accent,
       }, { onConflict: "event_id" });
-      if (error) {
-        if (error.message.includes("row-level security") || error.code === "42501") {
-          throw new Error("Permission denied. Your account is not an admin. Flip is_admin=true for your email in the Supabase dashboard (profiles table).");
-        }
-        throw error;
-      }
+      if (error) throw error;
       toast.success(event ? "Event updated!" : "Event created!");
       onSaved();
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save.", { duration: 8000 });
+      toast.error(err instanceof Error ? err.message : "Could not save.");
     } finally { setSaving(false); }
   }
 

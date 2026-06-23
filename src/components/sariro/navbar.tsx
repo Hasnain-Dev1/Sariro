@@ -18,6 +18,7 @@ import {
 import { ROUTES } from "@/lib/nav";
 import { SUPPORT_NAV } from "@/lib/support";
 import { UserMenu } from "./user-menu";
+import { useAuthState } from "./use-auth-state";
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -26,6 +27,8 @@ export function Navbar() {
   const active = useActiveRoute();
   const pathname = usePathname();
   const supportRef = useRef<HTMLLIElement>(null);
+  const { user } = useAuthState();
+  const homeHref = user ? "/dashboard" : "/";
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -60,11 +63,11 @@ export function Navbar() {
         className="mx-auto flex h-16 sm:h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8"
         aria-label="Primary"
       >
-        {/* Wordmark */}
+        {/* Wordmark — links to /dashboard when logged in, / when not */}
         <Link
-          href={ROUTES.home}
+          href={homeHref}
           className="group flex items-center gap-2 cursor-pointer"
-          aria-label="Sariro home"
+          aria-label={user ? "Go to dashboard" : "Sariro home"}
         >
           <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-foreground text-background font-heading font-extrabold text-lg shadow-sm">
             S

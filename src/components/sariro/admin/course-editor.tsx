@@ -109,18 +109,12 @@ export function CourseEditor({ course, open, onClose, onSaved }: Props) {
       const { error } = await supabase
         .from("courses")
         .upsert(payload, { onConflict: "course_id" });
-      if (error) {
-        if (error.message.includes("row-level security") || error.code === "42501") {
-          throw new Error("Permission denied. Your account is not an admin. Ask an admin to flip is_admin=true for your email in the Supabase dashboard (profiles table).");
-        }
-        throw error;
-      }
+      if (error) throw error;
       toast.success(course ? "Course updated!" : "Course created!");
       onSaved();
       onClose();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not save.";
-      toast.error(msg, { duration: 8000 });
+      toast.error(err instanceof Error ? err.message : "Could not save.");
     } finally {
       setSaving(false);
     }

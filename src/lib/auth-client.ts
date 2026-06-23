@@ -7,20 +7,16 @@
 
 import { getSupabaseBrowser, isSupabaseConfigured } from "@/db/supabase-browser";
 
-export type UserRole = "student" | "teacher" | "admin";
-
 export interface SariroUser {
   id: string;
   email: string;
   displayName: string;
   avatarInitial: string;
-  avatarUrl: string | null;
   isAdmin: boolean;
-  role: UserRole;
-  provider: string;
 }
 
 // ── Helper: derive a display name from an email ─────────────────────────────
+// "ali@eg.com" → "Ali", "john.doe99@x.com" → "John"
 function deriveNameFromEmail(email: string): string {
   const local = email.split("@")[0] ?? "";
   const clean = local.replace(/[0-9._-]+/g, " ").trim();
@@ -32,43 +28,37 @@ function deriveNameFromEmail(email: string): string {
 async function fetchProfile(userId: string): Promise<{
   display_name: string | null;
   avatar_initial: string | null;
-  avatar_url: string | null;
   is_admin: boolean;
-  role: string | null;
-  provider: string | null;
 } | null> {
   const supabase = getSupabaseBrowser();
   for (let attempt = 0; attempt < 3; attempt++) {
     const { data, error } = await supabase
       .from("profiles")
-      .select("display_name, avatar_initial, avatar_url, is_admin, role, provider")
+      .select("display_name, avatar_initial, is_admin")
       .eq("id", userId)
       .single();
     if (data) return data;
+    // Profile might not exist yet (trigger race) — wait + retry
     if (attempt < 2) await new Promise((r) => setTimeout(r, 500));
   }
   return null;
 }
 
-// ── OAuth sign-in helpers (Google, Facebook, GitHub) ────────────────────────
-// All request ONLY email + name + avatar. Privacy first.
-async function signInWithProvider(provider: "google" | "facebook" | "github") {
+// ── Sign in with Google (One Tap / OAuth redirect) ──────────────────────────
+// Privacy: requests ONLY email + profile scope. Nothing else.
+export async function signInWithGoogle(): Promise<void> {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured. Add your keys to .env");
   }
   const supabase = getSupabaseBrowser();
   const { error } = await supabase.auth.signInWithOAuth({
-    provider,
+    provider: "google",
     options: {
       redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
     },
   });
   if (error) throw error;
 }
-
-export const signInWithGoogle = () => signInWithProvider("google");
-export const signInWithFacebook = () => signInWithProvider("facebook");
-export const signInWithGitHub = () => signInWithProvider("github");
 
 // ── Sign up with email + password ───────────────────────────────────────────
 export async function signUpWithEmail(
@@ -81,6 +71,8 @@ export async function signUpWithEmail(
   const supabase = getSupabaseBrowser();
   const { data, error } = await supabase.auth.signUp({ email, password });
   if (error) throw error;
+  // If email confirmation is enabled in Supabase settings, user must verify
+  // before they can log in. If disabled, they're logged in immediately.
   return { needsEmailConfirm: !data.session };
 }
 
@@ -105,6 +97,7 @@ export async function signOut(): Promise<void> {
 }
 
 // ── Subscribe to auth state changes (for navbar reactivity) ─────────────────
+// Gracefully no-ops if Supabase isn't configured (returns null user).
 export function onAuthChange(
   callback: (user: SariroUser | null) => void
 ): () => void {
@@ -126,17 +119,13 @@ export function onAuthChange(
     const displayName = profile?.display_name || deriveNameFromEmail(email);
     const avatarInitial =
       profile?.avatar_initial || displayName.charAt(0).toUpperCase() || "S";
-    const role = (profile?.role as UserRole) || "student";
 
     callback({
       id: session.user.id,
       email,
       displayName,
       avatarInitial,
-      avatarUrl: profile?.avatar_url ?? null,
       isAdmin: profile?.is_admin ?? false,
-      role,
-      provider: profile?.provider ?? "email",
     });
   };
 
@@ -144,6 +133,7 @@ export function onAuthChange(
     buildUser(session);
   });
 
+  // Also fire immediately with the current session (for page loads)
   supabase.auth.getSession().then(({ data: { session } }) => buildUser(session));
 
   return () => data.subscription.unsubscribe();
