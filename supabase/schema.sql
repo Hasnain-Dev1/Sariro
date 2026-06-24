@@ -24,36 +24,83 @@ create table if not exists public.profiles (
   id            uuid primary key references auth.users (id) on delete cascade,
   email         text not null,
   display_name  text,
-  is_admin      boolean not null default false,   -- ← manually flipped in Supabase
+  is_admin      boolean not null default false,
+  role          text not null default 'student',
+  avatar_url    text,
   avatar_initial text,
+  provider      text,
   created_at    timestamptz not null default now()
 );
 
-comment on column public.profiles.is_admin is
-  'Admin flag. Default false. Manually flipped to true in Supabase dashboard by another admin. Never auto-set by code.';
+-- ── MIGRATION: add new columns if the table already exists from a previous run ──
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema='public' and table_name='profiles' and column_name='role') then
+    alter table public.profiles add column role text not null default 'student';
+  end if;
+  if not exists (select 1 from information_schema.columns
+                 where table_schema='public' and table_name='profiles' and column_name='avatar_url') then
+    alter table public.profiles add column avatar_url text;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                 where table_schema='public' and table_name='profiles' and column_name='provider') then
+    alter table public.profiles add column provider text;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                 where table_schema='public' and table_name='profiles' and column_name='avatar_initial') then
+    alter table public.profiles add column avatar_initial text;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                 where table_schema='public' and table_name='profiles' and column_name='is_admin') then
+    alter table public.profiles add column is_admin boolean not null default false;
+  end if;
+end $$;
 
--- Auto-create a profile row whenever a new user signs up (via Supabase Auth).
--- Extracts display_name from the email local-part: ali@eg.com → "Ali"
+comment on column public.profiles.is_admin is
+  'Admin flag. Default false. Manually flipped to true. Never auto-set by code.';
+comment on column public.profiles.role is
+  'User role: student (default), teacher, or admin. Manually changed in admin panel. Never auto-set by code.';
+
+-- Auto-create a profile row whenever a new user signs up.
+-- Fetches display_name from OAuth metadata first (Google/Facebook/GitHub),
+-- falls back to extracting from email (ali@eg.com → "Ali").
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 declare
+  v_display_name text;
+  v_avatar_url text;
+  v_initial text;
+  v_provider text;
   local_part text;
-  clean_name text;
-  initial text;
 begin
-  local_part := split_part(new.email, '@', 1);
-  -- strip digits, dots, underscores, dashes → first word
-  clean_name := regexp_replace(local_part, '[0-9._-]+', ' ', 'g');
-  clean_name := split_part(trim(clean_name), ' ', 1);
-  clean_name := initcap(clean_name);
-  initial := upper(left(coalesce(nullif(clean_name, ''), 'X'), 1));
-
-  insert into public.profiles (id, email, display_name, avatar_initial)
-  values (new.id, new.email, clean_name, initial);
-
+  v_display_name := new.raw_user_meta_data->>'full_name';
+  if v_display_name is null or v_display_name = '' then
+    v_display_name := new.raw_user_meta_data->>'name';
+  end if;
+  if v_display_name is null or v_display_name = '' then
+    v_display_name := new.raw_user_meta_data->>'user_name';
+  end if;
+  v_avatar_url := new.raw_user_meta_data->>'avatar_url';
+  if v_avatar_url is null then
+    v_avatar_url := new.raw_user_meta_data->>'picture';
+  end if;
+  v_provider := new.raw_app_meta_data->>'provider';
+  if v_provider is null then
+    v_provider := 'email';
+  end if;
+  if v_display_name is null or v_display_name = '' then
+    local_part := split_part(new.email, '@', 1);
+    v_display_name := regexp_replace(local_part, '[0-9._-]+', ' ', 'g');
+    v_display_name := split_part(trim(v_display_name), ' ', 1);
+    v_display_name := initcap(v_display_name);
+  end if;
+  v_initial := upper(left(coalesce(nullif(v_display_name, ''), 'X'), 1));
+  insert into public.profiles (id, email, display_name, avatar_url, avatar_initial, provider)
+  values (new.id, new.email, v_display_name, v_avatar_url, v_initial, v_provider);
   return new;
 end;
 $$;
