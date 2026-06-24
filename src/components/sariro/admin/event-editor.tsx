@@ -78,12 +78,21 @@ export function EventEditor({ event, open, onClose, onSaved }: Props) {
     try {
       const { getSupabaseBrowser } = await import("@/db/supabase-browser");
       const supabase = getSupabaseBrowser();
-      const { error } = await supabase.from("events").delete().eq("event_id", event.id);
-      if (error) throw error;
-      toast.success("Event deleted.");
+      const { error, count } = await supabase.from("events").delete({ count: "exact" }).eq("event_id", event.id);
+      if (error) {
+        if (error.message.includes("row-level security") || error.code === "42501") {
+          throw new Error("Permission denied. Only admins can delete events.");
+        }
+        throw error;
+      }
+      if (count === 0) {
+        toast.info("This event is demo data (not in the database). To permanently remove it, delete it from src/lib/data.ts.", { duration: 8000 });
+      } else {
+        toast.success("Event deleted from database.");
+      }
       onSaved();
       onClose();
-    } catch { toast.error("Could not delete."); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Could not delete.", { duration: 8000 }); }
     finally { setSaving(false); }
   }
 
@@ -96,7 +105,7 @@ export function EventEditor({ event, open, onClose, onSaved }: Props) {
         </div>
         <div className="p-6 space-y-4">
           <div className="grid sm:grid-cols-2 gap-4">
-            <Field label="Event ID (slug)" value={form.event_id} onChange={(v) => update("event_id", v.toLowerCase().replace(/\s+/g, "-"))} placeholder="ai-trends-webinar" />
+            <Field label="Event ID (slug)" value={form.event_id} onChange={(v) => update("event_id", v.toLowerCase().replace(/\s+/g, "-"))} placeholder="ai-trends-webinar" disabled={!!event} hint={event ? "Cannot change ID on existing event" : undefined} />
             <Field label="Title" value={form.title} onChange={(v) => update("title", v)} placeholder="AI Trends 2026" />
           </div>
           <div className="grid sm:grid-cols-3 gap-4">
@@ -138,11 +147,12 @@ export function EventEditor({ event, open, onClose, onSaved }: Props) {
   );
 }
 
-function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function Field({ label, value, onChange, placeholder, disabled, hint }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean; hint?: string }) {
   return (
     <label className="block">
       <span className="block text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wider">{label}</span>
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-medium outline-none focus-visible:border-brand-blue focus-visible:ring-[3px] focus-visible:ring-brand-blue/20" />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-medium outline-none focus-visible:border-brand-blue focus-visible:ring-[3px] focus-visible:ring-brand-blue/20 disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-muted" />
+      {hint && <span className="block text-[10px] text-amber-600 font-medium mt-1">{hint}</span>}
     </label>
   );
 }

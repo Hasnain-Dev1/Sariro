@@ -127,16 +127,25 @@ export function CourseEditor({ course, open, onClose, onSaved }: Props) {
     try {
       const { getSupabaseBrowser } = await import("@/db/supabase-browser");
       const supabase = getSupabaseBrowser();
-      const { error } = await supabase
+      const { error, count } = await supabase
         .from("courses")
-        .delete()
+        .delete({ count: "exact" })
         .eq("course_id", course.id);
-      if (error) throw error;
-      toast.success("Course deleted.");
+      if (error) {
+        if (error.message.includes("row-level security") || error.code === "42501") {
+          throw new Error("Permission denied. Only admins can delete courses. Make sure is_admin=true for your account.");
+        }
+        throw error;
+      }
+      if (count === 0) {
+        toast.info("This course is demo data (not in the database). It will reappear on refresh. To permanently remove it, delete it from src/lib/data.ts.", { duration: 8000 });
+      } else {
+        toast.success("Course deleted from database.");
+      }
       onSaved();
       onClose();
-    } catch {
-      toast.error("Could not delete.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete.", { duration: 8000 });
     } finally {
       setSaving(false);
     }
@@ -157,7 +166,7 @@ export function CourseEditor({ course, open, onClose, onSaved }: Props) {
 
         <div className="p-6 space-y-4">
           <div className="grid sm:grid-cols-2 gap-4">
-            <Input label="Course ID (slug)" value={form.course_id} onChange={(v) => update("course_id", v.toLowerCase().replace(/\s+/g, "-"))} placeholder="ai-literacy" />
+            <Input label="Course ID (slug)" value={form.course_id} onChange={(v) => update("course_id", v.toLowerCase().replace(/\s+/g, "-"))} placeholder="ai-literacy" disabled={!!course} hint={course ? "Cannot change ID on existing course" : undefined} />
             <Input label="Title" value={form.title} onChange={(v) => update("title", v)} placeholder="AI Literacy Fundamentals" />
           </div>
           <Input label="Tagline" value={form.tagline} onChange={(v) => update("tagline", v)} placeholder="Understand what AI is and how to use it." />
@@ -212,11 +221,12 @@ export function CourseEditor({ course, open, onClose, onSaved }: Props) {
 }
 
 // ── Reusable field components ───────────────────────────────────────────────
-function Input({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function Input({ label, value, onChange, placeholder, disabled, hint }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean; hint?: string }) {
   return (
     <label className="block">
       <span className="block text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wider">{label}</span>
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-medium outline-none focus-visible:border-brand-blue focus-visible:ring-[3px] focus-visible:ring-brand-blue/20" />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-medium outline-none focus-visible:border-brand-blue focus-visible:ring-[3px] focus-visible:ring-brand-blue/20 disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-muted" />
+      {hint && <span className="block text-[10px] text-amber-600 font-medium mt-1">{hint}</span>}
     </label>
   );
 }

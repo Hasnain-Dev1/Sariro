@@ -28,13 +28,16 @@ function deriveNameFromEmail(email: string): string {
 async function fetchProfile(userId: string): Promise<{
   display_name: string | null;
   avatar_initial: string | null;
+  avatar_url: string | null;
   is_admin: boolean;
+  role: string | null;
+  provider: string | null;
 } | null> {
   const supabase = getSupabaseBrowser();
   for (let attempt = 0; attempt < 3; attempt++) {
     const { data, error } = await supabase
       .from("profiles")
-      .select("display_name, avatar_initial, is_admin")
+      .select("display_name, avatar_initial, avatar_url, is_admin, role, provider")
       .eq("id", userId)
       .single();
     if (data) return data;
@@ -151,13 +154,17 @@ export function onAuthChange(
     const displayName = profile?.display_name || deriveNameFromEmail(email);
     const avatarInitial =
       profile?.avatar_initial || displayName.charAt(0).toUpperCase() || "S";
+    const role = (profile?.role as UserRole) || (profile?.is_admin ? "admin" : "student");
 
     callback({
       id: session.user.id,
       email,
       displayName,
       avatarInitial,
+      avatarUrl: profile?.avatar_url ?? null,
       isAdmin: profile?.is_admin ?? false,
+      role,
+      provider: profile?.provider ?? "email",
     });
   };
 

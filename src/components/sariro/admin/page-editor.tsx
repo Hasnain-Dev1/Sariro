@@ -73,12 +73,21 @@ export function PageEditor({ page, open, onClose, onSaved }: Props) {
     try {
       const { getSupabaseBrowser } = await import("@/db/supabase-browser");
       const supabase = getSupabaseBrowser();
-      const { error } = await supabase.from("pages").delete().eq("slug", page.slug);
-      if (error) throw error;
-      toast.success("Page deleted.");
+      const { error, count } = await supabase.from("pages").delete({ count: "exact" }).eq("slug", page.slug);
+      if (error) {
+        if (error.message.includes("row-level security") || error.code === "42501") {
+          throw new Error("Permission denied. Only admins can delete pages.");
+        }
+        throw error;
+      }
+      if (count === 0) {
+        toast.info("This page is demo data (not in the database). To permanently remove it, delete it from src/lib/support.ts.", { duration: 8000 });
+      } else {
+        toast.success("Page deleted from database.");
+      }
       onSaved();
       onClose();
-    } catch { toast.error("Could not delete."); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Could not delete.", { duration: 8000 }); }
     finally { setSaving(false); }
   }
 
@@ -93,7 +102,8 @@ export function PageEditor({ page, open, onClose, onSaved }: Props) {
           <div className="grid sm:grid-cols-2 gap-4">
             <label className="block">
               <span className="block text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wider">Slug (URL)</span>
-              <input value={form.slug} onChange={(e) => update("slug", e.target.value.toLowerCase().replace(/\s+/g, "-"))} placeholder="privacy-policy" className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-medium outline-none focus-visible:border-brand-blue focus-visible:ring-[3px] focus-visible:ring-brand-blue/20" />
+              <input value={form.slug} onChange={(e) => update("slug", e.target.value.toLowerCase().replace(/\s+/g, "-"))} placeholder="privacy-policy" disabled={!!page} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-medium outline-none focus-visible:border-brand-blue focus-visible:ring-[3px] focus-visible:ring-brand-blue/20 disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-muted" />
+              {page && <span className="block text-[10px] text-amber-600 font-medium mt-1">Cannot change slug on existing page</span>}
               <span className="block text-xs text-muted-foreground mt-1">/support/{form.slug || "slug"}</span>
             </label>
             <label className="block">

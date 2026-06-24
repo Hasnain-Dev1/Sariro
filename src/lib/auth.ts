@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { getSupabaseServer } from "@/db/supabase";
-import type { SariroUser } from "./auth-client";
+import type { SariroUser, UserRole } from "./auth-client";
 
 // ── Server-side: read current user from session cookie ──────────────────────
 export async function getCurrentUser(): Promise<SariroUser | null> {
@@ -20,7 +20,7 @@ export async function getCurrentUser(): Promise<SariroUser | null> {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("display_name, avatar_initial, is_admin")
+      .select("display_name, avatar_initial, avatar_url, is_admin, role, provider")
       .eq("id", user.id)
       .single();
 
@@ -33,13 +33,17 @@ export async function getCurrentUser(): Promise<SariroUser | null> {
       rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase();
     const avatarInitial =
       profile?.avatar_initial || displayName.charAt(0).toUpperCase() || "S";
+    const role = (profile?.role as UserRole) || (profile?.is_admin ? "admin" : "student");
 
     return {
       id: user.id,
       email,
       displayName,
       avatarInitial,
+      avatarUrl: profile?.avatar_url ?? null,
       isAdmin: profile?.is_admin ?? false,
+      role,
+      provider: profile?.provider ?? "email",
     };
   } catch {
     return null;
